@@ -148,6 +148,13 @@ class RetrievalConfig:
     # Phase 6: HNSW approximate-nearest-neighbor search
     use_hnsw: bool = False
 
+    # Phase 7: new retrieval / reranking methods
+    use_tfidf: bool = False
+    use_mmr_rerank: bool = False
+    mmr_lambda: float = 0.5
+    use_cross_encoder_rerank: bool = False
+    use_aar_fusion: bool = False
+
     # Final result cap
     max_results: int = 20
 

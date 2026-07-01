@@ -20,6 +20,9 @@ from src.application.use_cases.metadata_boost import MetadataBoostService
 from src.application.use_cases.rerank import RerankUseCase
 from src.application.use_cases.vector_search import VectorSearchUseCase
 from src.domain.entities.retrieval_result import RetrievalResult
+from src.domain.services.aar_fusion_service import AARFusionService
+from src.domain.services.cross_encoder_rerank_service import CrossEncoderRerankService
+from src.domain.services.mmr_rerank_service import MMRRerankService
 from src.domain.services.rrf_fusion_service import RRFFusionService
 from src.domain.value_objects.query import Query
 
@@ -57,7 +60,11 @@ class RetrieveDocumentsUseCase:
         graph_repository: GraphRepository,
         chunk_repository: ChunkRepository,
         sparse_retriever: SparseRetriever | None = None,
+        tfidf_retriever: Any | None = None,
         rrf_fusion_service: RRFFusionService | None = None,
+        aar_fusion_service: AARFusionService | None = None,
+        mmr_rerank_service: MMRRerankService | None = None,
+        cross_encoder_rerank_service: CrossEncoderRerankService | None = None,
         query_classifier: QueryClassifier | None = None,
         strategy_router: StrategyRouter | None = None,
         metadata_boost_service: MetadataBoostService | None = None,
@@ -66,7 +73,11 @@ class RetrieveDocumentsUseCase:
         self.graph_expand = GraphExpandUseCase(graph_repository)
         self.rerank = RerankUseCase(chunk_repository)
         self.sparse_retriever = sparse_retriever
+        self.tfidf_retriever = tfidf_retriever
         self.rrf_fusion_service = rrf_fusion_service or RRFFusionService()
+        self.aar_fusion_service = aar_fusion_service or AARFusionService()
+        self.mmr_rerank_service = mmr_rerank_service
+        self.cross_encoder_rerank_service = cross_encoder_rerank_service
         self.query_classifier = query_classifier
         self.strategy_router = strategy_router
         self.metadata_boost_service = metadata_boost_service

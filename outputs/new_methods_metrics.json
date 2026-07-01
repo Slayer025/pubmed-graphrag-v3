@@ -1,0 +1,63 @@
+{
+  "metadata": {
+    "date": "2026-07-01",
+    "num_queries": 40,
+    "metrics": [
+      "recall@5",
+      "recall@10",
+      "mrr@10",
+      "avg_latency_ms"
+    ]
+  },
+  "methods": {
+    "dense": {
+      "num_queries": 40,
+      "recall@5": 0.025,
+      "recall@10": 0.05,
+      "mrr@10": 0.0098,
+      "avg_latency_ms": 839.47
+    },
+    "bm25": {
+      "num_queries": 40,
+      "recall@5": 0.1,
+      "recall@10": 0.175,
+      "mrr@10": 0.0451,
+      "avg_latency_ms": 771.25
+    },
+    "tfidf": {
+      "num_queries": 40,
+      "recall@5": 0.1,
+      "recall@10": 0.15,
+      "mrr@10": 0.0484,
+      "avg_latency_ms": 523.56
+    },
+    "rrf": {
+      "num_queries": 40,
+      "recall@5": 0.05,
+      "recall@10": 0.1,
+      "mrr@10": 0.019,
+      "avg_latency_ms": 842.84
+    },
+    "aar": {
+      "num_queries": 40,
+      "recall@5": 0.0,
+      "recall@10": 0.0,
+      "mrr@10": 0.0,
+      "avg_latency_ms": 837.01
+    },
+    "mmr": {
+      "num_queries": 40,
+      "recall@5": 0.025,
+      "recall@10": 0.05,
+      "mrr@10": 0.0111,
+      "avg_latency_ms": 745.21
+    },
+    "cross_encoder": {
+      "num_queries": 40,
+      "recall@5": 0.025,
+      "recall@10": 0.05,
+      "mrr@10": 0.0167,
+      "avg_latency_ms": 2665.69
+    }
+  }
+}

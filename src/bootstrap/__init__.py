@@ -30,6 +30,7 @@ from src.domain.services.strategy_router import route_strategy
 from src.infrastructure.embeddings.remote_embedding_client import create_embedding_client
 from src.infrastructure.graph.in_memory_graph_repository import InMemoryGraphRepository
 from src.infrastructure.retrievers.bm25_retriever import BM25Retriever
+from src.infrastructure.retrievers.tfidf_retriever import TfidfRetriever
 from src.infrastructure.storage.artifact_loader import LoadedArtifacts
 from src.infrastructure.storage.chunk_repository import InMemoryChunkRepository
 from src.infrastructure.storage.pure_build import pure_build_guard
@@ -230,6 +231,11 @@ def _build_sparse_retriever(chunks: list[dict[str, Any]]) -> BM25Retriever:
     return BM25Retriever(chunks)
 
 
+def _build_tfidf_retriever(chunks: list[dict[str, Any]]) -> TfidfRetriever:
+    """Build the TF-IDF sparse retriever directly from chunk records."""
+    return TfidfRetriever(chunks)
+
+
 def _build_retrieve_documents(config: AppConfig | None = None) -> RetrieveDocumentsUseCase:
     """Build the main retrieval use case with cached artifacts and model."""
     cfg = config or AppConfig.default()
@@ -245,6 +251,7 @@ def _build_retrieve_documents(config: AppConfig | None = None) -> RetrieveDocume
     )
     chunk_repository = InMemoryChunkRepository(artifacts.chunks)
     sparse_retriever = _build_sparse_retriever(artifacts.chunks)
+    tfidf_retriever = _build_tfidf_retriever(artifacts.chunks)
     metadata_boost_service = MetadataBoostService(graph_repository)
 
     return RetrieveDocumentsUseCase(
@@ -253,6 +260,7 @@ def _build_retrieve_documents(config: AppConfig | None = None) -> RetrieveDocume
         graph_repository=graph_repository,
         chunk_repository=chunk_repository,
         sparse_retriever=sparse_retriever,
+        tfidf_retriever=tfidf_retriever,
         rrf_fusion_service=RRFFusionService(),
         query_classifier=_QueryClassifierPort(),
         strategy_router=_StrategyRouterPort(),
@@ -295,12 +303,14 @@ def build_pipeline(
         )
         chunk_repository = InMemoryChunkRepository(artifacts.chunks)
         sparse_retriever = _build_sparse_retriever(artifacts.chunks)
+        tfidf_retriever = _build_tfidf_retriever(artifacts.chunks)
         retrieve_documents = RetrieveDocumentsUseCase(
             embedding_service=embedding_service,
             vector_store=_build_vector_store(app_config, artifacts),
             graph_repository=graph_repository,
             chunk_repository=chunk_repository,
             sparse_retriever=sparse_retriever,
+            tfidf_retriever=tfidf_retriever,
             rrf_fusion_service=RRFFusionService(),
             query_classifier=_QueryClassifierPort(),
             strategy_router=_StrategyRouterPort(),

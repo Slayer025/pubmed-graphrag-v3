@@ -38,6 +38,13 @@ class SearchConfig:
     # Phase 6: HNSW approximate-nearest-neighbor search
     use_hnsw: bool = False
 
+    # Phase 7: new retrieval / reranking methods
+    use_tfidf: bool = False
+    use_mmr_rerank: bool = False
+    mmr_lambda: float = 0.5
+    use_cross_encoder_rerank: bool = False
+    use_aar_fusion: bool = False
+
     @classmethod
     def from_retrieval_config(cls, config) -> "SearchConfig":
         """Build a ``SearchConfig`` from ``src.config.RetrievalConfig``."""
@@ -60,6 +67,11 @@ class SearchConfig:
             enable_multi_index=getattr(config, "enable_multi_index", False),
             index_name=default_index,
             use_hnsw=getattr(config, "use_hnsw", False),
+            use_tfidf=getattr(config, "use_tfidf", False),
+            use_mmr_rerank=getattr(config, "use_mmr_rerank", False),
+            mmr_lambda=getattr(config, "mmr_lambda", 0.5),
+            use_cross_encoder_rerank=getattr(config, "use_cross_encoder_rerank", False),
+            use_aar_fusion=getattr(config, "use_aar_fusion", False),
         )
 
     def to_hyperparameters(self) -> RetrievalHyperparameters:
