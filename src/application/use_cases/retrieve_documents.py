@@ -186,38 +186,128 @@ class RetrieveDocumentsUseCase:
             use_hnsw=routed_config.use_hnsw,
         )
 
-        if not routed_config.use_hybrid or self.sparse_retriever is None:
+        if routed_config.use_aar_fusion and self.sparse_retriever is not None and self.tfidf_retriever is not None:
+            logger.info("RETRIEVAL: mode=aar_fusion")
+            results = self._run_aar_fusion(query, routed_config, vector_results)
+        elif routed_config.use_hybrid and self.sparse_retriever is not None:
+            logger.info("RETRIEVAL: mode=hybrid")
+            results = self._run_hybrid_rrf(query, routed_config, vector_results)
+        else:
             logger.info("RETRIEVAL: mode=dense_only")
             seed_ids = {chunk_id for chunk_id, _ in vector_results}
             expanded = self.graph_expand.execute(seed_ids, routed_config)
             results = self.rerank.execute(vector_results, expanded, routed_config)
-        else:
-            logger.info("RETRIEVAL: mode=hybrid")
-            sparse_results = self.sparse_retriever.search(query.text, routed_config.top_k)
-            fused = self.rrf_fusion_service.fuse(
-                [
-                    {"chunk_id": chunk_id, "score": score}
-                    for chunk_id, score in vector_results
-                ],
-                [
-                    {"chunk_id": chunk_id, "score": score}
-                    for chunk_id, score in sparse_results
-                ],
-                k=routed_config.rrf_k,
-            )
-            fused_results = [
-                (result.chunk_id, result.rrf_score) for result in fused[: routed_config.top_k]
-            ]
 
-            seed_ids = {chunk_id for chunk_id, _ in fused_results}
-            expanded = self.graph_expand.execute(seed_ids, routed_config)
-            results = self.rerank.execute(fused_results, expanded, routed_config)
-
+        results = self._apply_mmr_rerank(query.text, results, routed_config)
+        results = self._apply_cross_encoder_rerank(query.text, results, routed_config)
         results = self._apply_metadata_boost(results, query, config)
 
         if config.enable_query_routing:
             return results, classification, strategy
         return results
+
+    def _run_hybrid_rrf(
+        self,
+        query: Query,
+        config: SearchConfig,
+        vector_results: list[tuple[str, float]],
+    ) -> list[RetrievalResult]:
+        sparse_results = self.sparse_retriever.search(query.text, config.top_k)
+        fused = self.rrf_fusion_service.fuse(
+            [
+                {"chunk_id": chunk_id, "score": score}
+                for chunk_id, score in vector_results
+            ],
+            [
+                {"chunk_id": chunk_id, "score": score}
+                for chunk_id, score in sparse_results
+            ],
+            k=config.rrf_k,
+        )
+        fused_results = [
+            (result.chunk_id, result.rrf_score) for result in fused[: config.top_k]
+        ]
+
+        seed_ids = {chunk_id for chunk_id, _ in fused_results}
+        expanded = self.graph_expand.execute(seed_ids, config)
+        return self.rerank.execute(fused_results, expanded, config)
+
+    def _run_aar_fusion(
+        self,
+        query: Query,
+        config: SearchConfig,
+        vector_results: list[tuple[str, float]],
+    ) -> list[RetrievalResult]:
+        bm25_results = self.sparse_retriever.search(query.text, 20)
+        tfidf_results = self.tfidf_retriever.search(query.text, 20)
+        chunk_ids = {cid for cid, _ in bm25_results + tfidf_results}
+        chunks = self.rerank.chunk_repository.get_chunks(chunk_ids)
+
+        def _with_article(results: list[tuple[str, float]]) -> list[dict]:
+            out: list[dict] = []
+            for cid, score in results:
+                article_id = str(chunks.get(cid, {}).get("article_id", ""))
+                out.append({"chunk_id": cid, "article_id": article_id, "score": float(score)})
+            return out
+
+        fused = self.aar_fusion_service.fuse(
+            _with_article(bm25_results),
+            _with_article(tfidf_results),
+            group_key="article_id",
+        )
+
+        article_to_best_chunk: dict[str, tuple[str, float]] = {}
+        for cid, score in bm25_results + tfidf_results:
+            article_id = str(chunks.get(cid, {}).get("article_id", ""))
+            if not article_id:
+                continue
+            existing = article_to_best_chunk.get(article_id)
+            if existing is None or score > existing[1]:
+                article_to_best_chunk[article_id] = (cid, score)
+
+        fused_results: list[tuple[str, float]] = []
+        for fused_rank, r in enumerate(fused[: config.top_k], start=1):
+            cid_score = article_to_best_chunk.get(r.id)
+            if cid_score:
+                cid, _ = cid_score
+                fused_results.append((cid, 1.0 / fused_rank))
+
+        aar_config = SearchConfig(
+            top_k=config.top_k,
+            expand_depth=0,
+            max_entity_degree=config.max_entity_degree,
+            max_expansion_per_entity=config.max_expansion_per_entity,
+            max_expanded_nodes=config.max_expanded_nodes,
+            alpha=0.99,
+            depth_scores=config.depth_scores,
+            max_results=config.max_results,
+            use_hybrid=False,
+            use_aar_fusion=False,
+            rrf_k=config.rrf_k,
+        )
+        seed_ids = {chunk_id for chunk_id, _ in fused_results}
+        expanded = self.graph_expand.execute(seed_ids, aar_config)
+        return self.rerank.execute(fused_results, expanded, aar_config)
+
+    def _apply_mmr_rerank(
+        self,
+        query_text: str,
+        results: list[RetrievalResult],
+        config: SearchConfig,
+    ) -> list[RetrievalResult]:
+        if not config.use_mmr_rerank or self.mmr_rerank_service is None:
+            return results
+        return self.mmr_rerank_service.rerank_objects(results, query_text, top_k=config.top_k)
+
+    def _apply_cross_encoder_rerank(
+        self,
+        query_text: str,
+        results: list[RetrievalResult],
+        config: SearchConfig,
+    ) -> list[RetrievalResult]:
+        if not config.use_cross_encoder_rerank or self.cross_encoder_rerank_service is None:
+            return results
+        return self.cross_encoder_rerank_service.rerank_objects(results, query_text, top_k=config.top_k)
 
     def retrieve_by_vector(
         self,

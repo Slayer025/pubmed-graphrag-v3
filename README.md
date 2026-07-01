@@ -12,7 +12,7 @@ This project builds a **GraphRAG** pipeline over PubMed scientific abstracts. Th
 - **Evaluation** — measure retrieval quality and answer faithfulness
 - **Demo application** — interactive query interface over the graph
 
-> **Project state:** All phases (1–7) are complete and deployed. The current focus is maintenance, evaluation, and incremental UX improvements.
+> **Project state:** All phases (1–7) are complete and deployed. Phase 8 adds CPU-only retrieval/ranking methods (TF-IDF, MMR, Cross-Encoder, AAR fusion) and exposes them in the Streamlit UI.
 >
 > **Phase 1** — data loading, chunking, embedding, visualization.  
 > **Phase 2** — entity extraction and Neo4j-importable graph export.  
@@ -20,7 +20,8 @@ This project builds a **GraphRAG** pipeline over PubMed scientific abstracts. Th
 > **Phase 4** — LLM generation and evaluation over PubMedQA.  
 > **Phase 5** — multiple embedding indexes / chunking strategies and query-driven routing.  
 > **Phase 6** — HNSW approximate-nearest-neighbor vector search.  
-> **Phase 7** — streaming sources/citations with event-sequence proof.
+> **Phase 7** — streaming sources/citations with event-sequence proof.  
+> **Phase 8** — new retrieval/ranking methods: TF-IDF, RRF tuning, AAR fusion, MMR rerank, Cross-Encoder rerank, and Streamlit UI controls.
 
 ## Environment
 
@@ -28,7 +29,7 @@ This project builds a **GraphRAG** pipeline over PubMed scientific abstracts. Th
 
 **Project location:** `/mnt/d/pubmed-graphrag`
 
-**Repository:** https://github.com/Slayer025/pubmed-graphrag-v2
+**Repository:** https://github.com/Slayer025/pubmed-graphrag-v3
 
 **Streamlit Cloud URL:** https://pubmed-graphrag-kamfpkughsfmstpcrv8r23.streamlit.app/
 
@@ -47,6 +48,8 @@ Activate the environment before running commands:
 # WSL/Linux
 source .venv/bin/activate
 ```
+
+**Note:** The `pubmed-graphrag-v3` repo shares the WSL venv from the original `pubmed-graphrag` directory because v3 does not contain its own virtual environment.
 
 **HF cache:** `HF_HOME=/tmp/hf_cache` (set automatically by `configure_environment()`)
 
@@ -349,6 +352,33 @@ Notes:
 - [x] Streamlit streaming UI with live sources, graph evidence, and answer tokens
 - [x] "🕒 Event Sequence" proof table showing sources arrive before the answer finishes
 
+### Phase 8 — New Retrieval / Ranking Methods
+
+**Status:** Complete
+
+- [x] TF-IDF retriever (`src/infrastructure/retrievers/tfidf_retriever.py`)
+- [x] MMR rerank service (`src/domain/services/mmr_rerank_service.py`)
+- [x] Cross-encoder rerank service (`src/domain/services/cross_encoder_rerank_service.py`)
+- [x] AAR fusion service with article-level fusion (`src/domain/services/aar_fusion_service.py`)
+- [x] RRF `k` tuning (default `rrf_k=10` selected from sweep)
+- [x] AAR retrieval-depth tuning (default `candidate_k=20` selected from sweep)
+- [x] Comprehensive 40-query evaluation runner (`evaluation/run_new_methods_eval.py`)
+- [x] Final metrics saved to `outputs/final_evaluation_metrics.json`
+- [x] Final comparison chart saved to `outputs/final_recall_comparison.png`
+- [x] Streamlit UI controls in `src/interfaces/streamlit/demo.py`
+
+| Method | Recall@5 | Recall@10 | MRR@10 | Latency |
+|---|---|---|---|---|
+| dense | 2.5% | 5.0% | 0.0098 | ~1249 ms |
+| bm25 | 10.0% | 17.5% | 0.0451 | ~675 ms |
+| tfidf | 10.0% | 15.0% | 0.0484 | ~450 ms |
+| rrf | 5.0% | 10.0% | 0.0190 | ~625 ms |
+| **aar** | **12.5%** | **15.0%** | **0.0507** | **~66 ms** |
+| mmr | 2.5% | 5.0% | 0.0111 | ~476 ms |
+| cross_encoder | 2.5% | 5.0% | 0.0167 | ~1102 ms |
+
+AAR (article-level Average Average Rank over BM25 + TF-IDF) outperforms every standalone and reranking method on this evaluation set. RRF, MMR, and Cross-Encoder remain available as optional toggles but do not improve over BM25 here.
+
 ### Demo application
 
 **Status:** Complete
@@ -373,14 +403,14 @@ Notes:
 Start the Streamlit demo after installing dependencies:
 
 ```bash
-cd /mnt/d/pubmed-graphrag
+cd /mnt/d/pubmed-graphrag-v3
 # Windows
 .venv_win\Scripts\activate
-streamlit run scripts/demo.py
+streamlit run src/interfaces/streamlit/demo.py
 
 # WSL/Linux
-source .venv/bin/activate
-streamlit run scripts/demo.py
+source /mnt/d/pubmed-graphrag/.venv/bin/activate
+streamlit run src/interfaces/streamlit/demo.py
 ```
 
 Configure secrets via `.streamlit/secrets.toml` or environment variables:
@@ -402,12 +432,19 @@ The demo runs locally in a browser and supports:
 
 * Mock, OpenAI, and Ollama LLM clients
 * Dense, hybrid (BM25 + RRF), HNSW, multi-index, and routed retrieval
+* **TF-IDF instead of BM25**
+* **AAR fusion (article-level BM25 + TF-IDF)**
+* **MMR reranking**
+* **Cross-encoder reranking**
+* Configurable **RRF k** (10–100)
 * Metadata-aware entity-label boosting
 * Adjustable retrieval parameters
 * Optional LLM-driven query decomposition
 * Optional graph-signal re-ranking
 * Optional Neo4j GDS PageRank (requires a running Neo4j graph named `pubmed-graph`)
 * Streaming mode with sources/citations and event-sequence proof
+
+New retrieval/ranking methods are **disabled by default** and can be enabled from the **🔬 Advanced Retrieval Methods** sidebar section. They are CPU-only and use lightweight models so they run on Streamlit Cloud.
 
 ## Commands
 
@@ -614,6 +651,8 @@ No Neo4j server is required to generate the CSV files — `create_graph.py` prod
 4. **Metadata boost metrics unchanged** — Evaluation queries don't contain entity-label keywords (gene, drug, disease). Architecture proven; needs targeted query set to show effect.
 
 5. **Secret leakage** — FIXED. Added `scrub_secrets()` utility, hid `HF_API_TOKEN` from `EmbeddingConfig` repr, and scrubbed tokens from logs, errors, and UI output.
+6. **Dense retrieval is weak on the 40-query set** — INVESTIGATED. Dense-only recall is only ~5% at Recall@10. The semantic embedding model (`all-MiniLM-L6-v2`) and vector index are functioning correctly; the query set contains many exact-entity/keyword questions that BM25 handles much better. AAR fusion therefore intentionally ignores the dense seed and fuses BM25 + TF-IDF at the article level.
+7. **AAR fusion recall was 0–7.5%** — FIXED. Removed missing-rank penalty, added article-level fusion, converted AAR rank to a positive score, and tuned retrieval depth to `candidate_k=20`. Final AAR Recall@5 = 12.5%, Recall@10 = 15.0%, beating all standalone methods.
 
 ## Limitations
 
@@ -632,6 +671,7 @@ No Neo4j server is required to generate the CSV files — `create_graph.py` prod
 3. **Citation extraction** — link answer sentences to the chunks they summarize
 4. **Production LLM backend** — move from mock to OpenAI / Ollama for generative answers
 5. **Neo4j-backed retrieval mode** — optional live graph traversal (currently offline CSV only)
+6. **Dense retrieval improvement** — experiment with domain-adapted or larger embedding models for the keyword-heavy 40-query set (CPU/Streamlit Cloud constraints apply)
 
 ## Constraints
 

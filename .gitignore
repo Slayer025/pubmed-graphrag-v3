@@ -38,6 +38,10 @@ pip_cache_backup/
 
 .env
 
+# Evaluation metrics and plots are intentionally tracked.
+!outputs/final_evaluation_metrics.json
+!outputs/final_recall_comparison.png
+
 build/
 dist/
 

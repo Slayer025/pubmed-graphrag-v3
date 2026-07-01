@@ -132,7 +132,7 @@ class RetrievalConfig:
 
     # Hybrid retrieval settings
     use_hybrid: bool = False
-    rrf_k: int = 20
+    rrf_k: int = 10
 
     # Phase 3: query understanding routing
     enable_query_routing: bool = False

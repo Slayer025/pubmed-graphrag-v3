@@ -115,6 +115,13 @@ def _build_search_config(base: SearchConfig, overrides: dict[str, Any]) -> Searc
         max_results=overrides.get("max_results", base.max_results),
         use_hnsw=use_hnsw,
         use_hybrid=overrides.get("use_hybrid", base.use_hybrid),
+        use_tfidf=overrides.get("use_tfidf", base.use_tfidf),
+        use_aar_fusion=overrides.get("use_aar_fusion", base.use_aar_fusion),
+        use_mmr_rerank=overrides.get("use_mmr_rerank", base.use_mmr_rerank),
+        mmr_lambda=overrides.get("mmr_lambda", base.mmr_lambda),
+        use_cross_encoder_rerank=overrides.get(
+            "use_cross_encoder_rerank", base.use_cross_encoder_rerank
+        ),
         rrf_k=overrides.get("rrf_k", base.rrf_k),
         enable_query_routing=overrides.get("enable_query_routing", base.enable_query_routing),
         enable_metadata_boost=overrides.get("enable_metadata_boost", base.enable_metadata_boost),
@@ -583,6 +590,42 @@ def main() -> int:
                 help="Streams retrieved sources and graph evidence before the answer finishes generating.",
             )
 
+        with st.expander("🔬 Advanced Retrieval Methods", expanded=True):
+            use_tfidf = st.checkbox(
+                "Use TF-IDF instead of BM25",
+                value=False,
+                help="Replaces BM25 keyword retrieval with sklearn TF-IDF in hybrid/AAR modes.",
+            )
+            use_aar_fusion = st.checkbox(
+                "Enable AAR Fusion",
+                value=False,
+                help="Article-level Average Average Rank fusion over BM25 + TF-IDF (ignores dense seed).",
+            )
+            use_mmr_rerank = st.checkbox(
+                "Enable MMR Rerank",
+                value=False,
+                help="Maximal Marginal Re-ranking adds diversity to the final result list (CPU-only).",
+            )
+            mmr_lambda = st.slider(
+                "MMR lambda (relevance vs diversity)",
+                0.0,
+                1.0,
+                0.5,
+                step=0.05,
+                disabled=not use_mmr_rerank,
+            )
+            use_cross_encoder_rerank = st.checkbox(
+                "Enable Cross-Encoder Rerank",
+                value=False,
+                help="Lightweight CPU cross-encoder (ms-marco-MiniLM-L-6-v2) second-stage reranker.",
+            )
+            rrf_k = st.select_slider(
+                "RRF k",
+                options=[10, 20, 30, 40, 50, 60, 80, 100],
+                value=10,
+                help="Reciprocal Rank Fusion damping constant. Lower k trusts top ranks more.",
+            )
+
         with st.expander("⚙️ Retrieval Parameters", expanded=False):
             top_k = st.slider("top_k", 1, 50, 10)
             expand_depth = st.slider("expand_depth", 0, 3, 2)
@@ -611,6 +654,14 @@ def main() -> int:
                 disabled=not use_reranker,
             )
 
+    # Ensure advanced retrieval flags exist as local names in all branches.
+    use_tfidf = locals().get("use_tfidf", False)
+    use_aar_fusion = locals().get("use_aar_fusion", False)
+    use_mmr_rerank = locals().get("use_mmr_rerank", False)
+    mmr_lambda = locals().get("mmr_lambda", 0.5)
+    use_cross_encoder_rerank = locals().get("use_cross_encoder_rerank", False)
+    rrf_k = locals().get("rrf_k", 10)
+
     index_name: str | None = None
     if enable_multi_index and manual_index != "Auto (router decides)":
         index_name = manual_index
@@ -623,6 +674,12 @@ def main() -> int:
         "max_results": max_results,
         "use_hnsw": use_hnsw,
         "use_hybrid": use_hybrid,
+        "use_tfidf": use_tfidf,
+        "use_aar_fusion": use_aar_fusion,
+        "use_mmr_rerank": use_mmr_rerank,
+        "mmr_lambda": mmr_lambda,
+        "use_cross_encoder_rerank": use_cross_encoder_rerank,
+        "rrf_k": rrf_k,
         "enable_query_routing": enable_query_routing,
         "enable_metadata_boost": enable_metadata_boost,
         "enable_multi_index": enable_multi_index,

@@ -24,7 +24,7 @@ class SearchConfig:
     alpha: float = 0.8
     depth_scores: tuple[float, float, float] = (1.0, 0.5, 0.25)
     use_hybrid: bool = False
-    rrf_k: int = 20
+    rrf_k: int = 10
     max_results: int = 20
     enable_query_routing: bool = False
     enable_metadata_boost: bool = False

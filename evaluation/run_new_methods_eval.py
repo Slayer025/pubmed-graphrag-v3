@@ -200,18 +200,78 @@ class _Evaluator:
         return _make_record(query, ranked, latency_ms)
 
     def run_aar(self, query_text: str, query: dict) -> dict:
+        """Run article-level AAR fusion of BM25 + TF-IDF.
+
+        The dense retriever underperforms on this evaluation set, so including it
+        in the AAR average drags down strong sparse rankings.  Fusing only the
+        two sparse retrievers preserves their signal while still combining
+        multiple strategies.
+
+        We fuse at the ``article_id`` level so that different chunks from the
+        same article reinforce each other instead of competing as independent
+        items.  The AAR service returns average ranks (lower is better); we
+        convert those to a positive score so the downstream score-fusion stage
+        does not push the AAR seed chunks below graph-expanded chunks.
+        """
+        return self.run_aar_with_candidate_k(query_text, query, candidate_k=20)
+
+    def run_aar_with_candidate_k(self, query_text: str, query: dict, candidate_k: int = 20) -> dict:
+        """Run article-level AAR fusion with a configurable retrieval depth."""
         start = time.perf_counter()
         config = SearchConfig(top_k=10, expand_depth=2, alpha=0.8, max_results=20)
-        dense = self._dense_results(query_text, config)
-        bm25_sparse = self.bm25.search(query_text, config.top_k)
-        tfidf_sparse = self.tfidf.search(query_text, config.top_k)
+        bm25_sparse = self.bm25.search(query_text, candidate_k)
+        tfidf_sparse = self.tfidf.search(query_text, candidate_k)
+
+        # Need article_id for article-level AAR; look it up from the chunk repo.
+        chunk_ids = {cid for cid, _ in bm25_sparse + tfidf_sparse}
+        chunks = self.chunk_repository.get_chunks(chunk_ids)
+
+        def _with_article(results: list[tuple[str, float]]) -> list[dict]:
+            out: list[dict] = []
+            for cid, score in results:
+                article_id = str(chunks.get(cid, {}).get("article_id", ""))
+                out.append({"chunk_id": cid, "article_id": article_id, "score": float(score)})
+            return out
+
         fused = self.aar.fuse(
-            [{"chunk_id": cid, "score": float(score)} for cid, score in dense],
-            [{"chunk_id": cid, "score": float(score)} for cid, score in bm25_sparse],
-            [{"chunk_id": cid, "score": float(score)} for cid, score in tfidf_sparse],
+            _with_article(bm25_sparse),
+            _with_article(tfidf_sparse),
+            group_key="article_id",
         )
-        seed = [(r.chunk_id, -r.aar_score) for r in fused[: config.top_k]]
-        ranked = self._score_fusion(seed, config)
+
+        # Build seed chunk list from the top fused articles, using the best chunk
+        # from each article.  We keep the chunk with the highest retriever score
+        # for each article so the strongest evidence is used as the seed.
+        article_to_best_chunk: dict[str, tuple[str, float]] = {}
+        for cid, score in bm25_sparse + tfidf_sparse:
+            article_id = str(chunks.get(cid, {}).get("article_id", ""))
+            if not article_id:
+                continue
+            existing = article_to_best_chunk.get(article_id)
+            if existing is None or score > existing[1]:
+                article_to_best_chunk[article_id] = (cid, score)
+
+        seed: list[tuple[str, float]] = []
+        for fused_rank, r in enumerate(fused[: config.top_k], start=1):
+            cid_score = article_to_best_chunk.get(r.id)
+            if cid_score:
+                cid, _ = cid_score
+                # Convert AAR fused rank to an RRF-style positive score so the
+                # top AAR articles keep their relative ordering after graph expansion.
+                seed.append((cid, 1.0 / fused_rank))
+
+        # Use a high alpha and no graph expansion so the AAR seed ranking is preserved.
+        aar_config = SearchConfig(
+            top_k=config.top_k,
+            expand_depth=0,
+            max_entity_degree=config.max_entity_degree,
+            max_expansion_per_entity=config.max_expansion_per_entity,
+            max_expanded_nodes=config.max_expanded_nodes,
+            alpha=0.99,
+            depth_scores=config.depth_scores,
+            max_results=config.max_results,
+        )
+        ranked = self._score_fusion(seed, aar_config)
         latency_ms = (time.perf_counter() - start) * 1000
         return _make_record(query, ranked, latency_ms)
 
