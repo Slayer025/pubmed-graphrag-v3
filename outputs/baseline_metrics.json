@@ -1,0 +1,46 @@
+{
+  "metadata": {
+    "description": "Baseline retrieval metrics captured from the existing pubmed-graphrag-v2 evaluation harness on the 40-query frozen evaluation set (queries.jsonl).",
+    "date": "2026-07-01",
+    "num_queries": 40,
+    "metrics": ["recall@5", "recall@10", "mrr@10", "avg_latency_ms"]
+  },
+  "baselines": {
+    "dense_only": {
+      "mode": "Dense-only",
+      "recall@5": 0.025,
+      "recall@5_pct": 2.5,
+      "recall@10": 0.05,
+      "recall@10_pct": 5.0,
+      "mrr@10": 0.0098,
+      "avg_latency_ms": 1426.86
+    },
+    "hybrid_rrf": {
+      "mode": "Hybrid RRF (dense + BM25, k=60)",
+      "recall@5": 0.05,
+      "recall@5_pct": 5.0,
+      "recall@10": 0.1,
+      "recall@10_pct": 10.0,
+      "mrr@10": 0.019,
+      "avg_latency_ms": 1297.55
+    },
+    "multi_index_routed": {
+      "mode": "Multi-index routed hybrid",
+      "recall@5": 0.05,
+      "recall@5_pct": 5.0,
+      "recall@10": 0.1,
+      "recall@10_pct": 10.0,
+      "mrr@10": 0.019,
+      "avg_latency_ms": 635.24
+    },
+    "hnsw": {
+      "mode": "HNSW-only",
+      "recall@5": 0.025,
+      "recall@5_pct": 2.5,
+      "recall@10": 0.05,
+      "recall@10_pct": 5.0,
+      "mrr@10": 0.0098,
+      "avg_latency_ms": 1205.93
+    }
+  }
+}
